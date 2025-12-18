@@ -17,12 +17,16 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.mockito.Mockito;
 
 import com.fathzer.sync4j.Entry;
 import com.fathzer.sync4j.File;
 import com.fathzer.sync4j.FileProvider;
 import com.fathzer.sync4j.Folder;
+
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 
 /** A try to create a common test for file providers (except for non-writable providers).
  * @see AbstractNonWritableFileProviderTest
@@ -80,17 +84,39 @@ public abstract class AbstractFileProviderTest {
     /** The root folder.
      * <br>This folder is created in the setup method.
      */
+    @Nullable
     protected Folder root;
+
     /** The file provider.
      * <br>This provider is created in the setup method.
      */
+    @Nullable
     protected FileProvider provider;
+
     /** The underlying file system.
      * <br>This file system is created in the setup method by calling {@link #getUnderlyingFileSystem()}. 
      */
+    @Nullable
     protected UnderlyingFileSystem ufs;
 
-    protected abstract FileProvider createFileProvider() throws IOException;
+    /**
+     * Creates the file provider.
+     * <br>This method is called in the setup method, during the @BeforeEach phase of the JUnit test.
+     * @return the file provider, or null if the test should be skipped
+     * @throws IOException if an I/O error occurs
+     */
+    @Nullable
+    protected abstract FileProvider createFileProvider(@Nonnull TestInfo testInfo) throws IOException;
+
+    /**
+     * Cleans up the file provider created in {@link #createFileProvider(TestInfo)}. 
+     * <br>This method is called during the @AfterEach phase of the JUnit test.
+     * <br>By default, this method does nothing.
+     * @throws IOException if an I/O error occurs
+     */
+    protected void cleanUpProvider() throws IOException {
+        // Do nothing by default
+    }
 
     /**
      * Returns the underlying file system on which the file provider is based.
@@ -99,20 +125,26 @@ public abstract class AbstractFileProviderTest {
     protected abstract UnderlyingFileSystem getUnderlyingFileSystem();
 
     @BeforeEach
-    protected void setup() throws IOException {
-        provider = createFileProvider();
+    protected void setup(TestInfo testInfo) throws IOException {
+        provider = createFileProvider(testInfo);
+        assumeTrue(provider != null, "Provider not available");
         root = provider.get(FileProvider.ROOT_PATH).asFolder();
         ufs = getUnderlyingFileSystem();
     }
 
     @AfterEach
-    void teardown() {
-        root.getFileProvider().close();
+    void teardown() throws IOException {
+        cleanUpProvider();
+        if (root != null) {
+            root.getFileProvider().close();
+        }
     }
 
     protected static File createMockFile(String content) throws IOException {
         File result = Mockito.mock(File.class);
-        Mockito.lenient().when(result.getInputStream()).thenReturn(new ByteArrayInputStream(content.getBytes()));
+        byte[] bytes = content.getBytes();
+		Mockito.lenient().when(result.getInputStream()).thenReturn(new ByteArrayInputStream(bytes));
+        Mockito.lenient().when(result.getSize()).thenReturn((long)bytes.length);
         return result;
     }
 
@@ -122,18 +154,12 @@ public abstract class AbstractFileProviderTest {
 
     protected Folder getAFolder() throws IOException {
         Entry entry = provider.get("/folder");
-        if (entry.isFolder()) {
-            return entry.asFolder();
-        }
-        return root.mkdir("folder");
+        return entry.isFolder() ? entry.asFolder() : root.mkdir("folder");
     }
 
     protected File getAFile() throws IOException {
         Entry entry = provider.get("/folder/file.txt");
-        if (entry.isFile()) {
-            return entry.asFile();
-        }
-        return getAFolder().copy("file.txt", createMockFile("content"), null);
+        return entry.isFile() ? entry.asFile() : getAFolder().copy("file.txt", createMockFile("content"), null);
     }
 
     protected Entry getMissingEntry(String prefix) throws IOException {
@@ -163,6 +189,8 @@ public abstract class AbstractFileProviderTest {
 
         // Check inconsistent path does not throw any exception and returns a non existing entry
         Entry file = getAFile();
+        System.out.println("Entry: "+file);
+        System.out.println("Path: "+file.getPath());
         Entry inconsistentPathFile = provider.get(file.getPath() + "/toto.txt");
         assertFalse(inconsistentPathFile.exists());
     }
