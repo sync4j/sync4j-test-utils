@@ -148,10 +148,6 @@ public abstract class AbstractFileProviderTest {
         return result;
     }
 
-    protected boolean isCreationTimeImmutable() throws IOException {
-        return false;
-    }
-
     protected Folder getAFolder() throws IOException {
         Entry entry = provider.get("/folder");
         return entry.isFolder() ? entry.asFolder() : root.mkdir("folder");
@@ -298,10 +294,8 @@ public abstract class AbstractFileProviderTest {
 
             File copiedFile = dest.copy("copied.txt", sourceFile, null);
             assertEquals("copied.txt", copiedFile.getName());
-            if (!isCreationTimeImmutable()) {
-                assertEquals(sourceFile.getCreationTime(), copiedFile.getCreationTime());
-            }
-            assertEquals(sourceFile.getLastModifiedTime(), copiedFile.getLastModifiedTime());
+            assertTrue(Math.abs(sourceFile.getCreationTime() - copiedFile.getCreationTime()) <= provider.getCreationTimePrecision(), "Creation time should match but found " + sourceFile.getCreationTime() + " for src and " + copiedFile.getCreationTime() + " for dest with a precision of " + provider.getCreationTimePrecision());
+            assertTrue(Math.abs(sourceFile.getLastModifiedTime() - copiedFile.getLastModifiedTime()) <= provider.getLastModifiedTimePrecision(), "Last modified time should match but found " + sourceFile.getLastModifiedTime() + " for src and " + copiedFile.getLastModifiedTime() + " for dest with a precision of " + provider.getLastModifiedTimePrecision());
 
             // Verify content
             try (InputStream is = copiedFile.getInputStream()) {
