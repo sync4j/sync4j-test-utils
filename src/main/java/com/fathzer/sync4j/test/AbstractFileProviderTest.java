@@ -189,8 +189,6 @@ public abstract class AbstractFileProviderTest {
 
         // Check inconsistent path does not throw any exception and returns a non existing entry
         Entry file = getAFile();
-        System.out.println("Entry: "+file);
-        System.out.println("Path: "+file.getPath());
         Entry inconsistentPathFile = provider.get(file.getPath() + "/toto.txt");
         assertFalse(inconsistentPathFile.exists());
     }
