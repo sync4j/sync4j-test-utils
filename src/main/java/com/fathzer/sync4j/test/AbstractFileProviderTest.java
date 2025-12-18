@@ -143,7 +143,7 @@ public abstract class AbstractFileProviderTest {
     protected static File createMockFile(String content) throws IOException {
         File result = Mockito.mock(File.class);
         byte[] bytes = content.getBytes();
-		Mockito.lenient().when(result.getInputStream()).thenReturn(new ByteArrayInputStream(bytes));
+        Mockito.lenient().when(result.getInputStream()).thenAnswer(invocation -> new ByteArrayInputStream(bytes));
         Mockito.lenient().when(result.getSize()).thenReturn((long)bytes.length);
         return result;
     }
@@ -311,6 +311,7 @@ public abstract class AbstractFileProviderTest {
 
             // Check progress listener + copying to an existing file
             AtomicLong progress = new AtomicLong();
+            System.out.println("Source file size: " + sourceFile.getSize());
             dest.copy("copied.txt", sourceFile, progress::set);
             assertEquals(sourceFile.getSize(), progress.get(), "Progress should match copied content size");
 
