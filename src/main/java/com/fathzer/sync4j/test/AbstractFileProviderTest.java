@@ -46,22 +46,29 @@ public abstract class AbstractFileProviderTest {
         /**
          * Create a file.
          * @param path the path of the file to create (relative to the root folder - e.g. "/folder/file.txt")
-         * @throws IOException if an I/O error occurs
+         * @throws IOException if an I/O error occurs, typically if the file already exists or the parent folder does not exist
          */
         void createFile(String path) throws IOException;
         
         /**
-         * Delete a file or a folder.
-         * <br>If called on a folder, the implementor can assume that the folder is empty.
-         * @param path the path of the file or folder to delete (relative to the root folder - e.g. "/folder/file.txt")
-         * @throws IOException if an I/O error occurs
+         * Delete a file.
+         * @param path the path of the file to delete (relative to the root folder - e.g. "/folder/file.txt")
+         * @throws IOException if an I/O error occurs, typically if the file does not exist
          */
-        void delete(String path) throws IOException;
+        void deleteFile(String path) throws IOException;
         
+        /**
+         * Delete a folder.
+         * <br>If called on a folder, the implementor can assume that the folder is empty.
+         * @param path the path of the folder to delete (relative to the root folder - e.g. "/folder/subfolder")
+         * @throws IOException if an I/O error occurs, typically if the folder does not exist
+         */
+        void deleteFolder(String path) throws IOException;
+
         /**
          * Create a folder.
          * @param path the path of the folder to create (relative to the root folder - e.g. "/folder")
-         * @throws IOException if an I/O error occurs
+         * @throws IOException if an I/O error occurs, typically if the folder already exists or the parent folder does not exist
          */
         void createFolder(String path) throws IOException;
         
@@ -69,7 +76,7 @@ public abstract class AbstractFileProviderTest {
          * Assert that the file exists and its content is equal to the given file.
          * @param path the path of the file to assert (relative to the root folder - e.g. "/folder/file.txt")
          * @param file the file to compare to
-         * @throws IOException if an I/O error occurs
+         * @throws IOException if an I/O error occurs, typically if the file does not exist
          */
         void assertUnderlyingFileEquals(String path, File file) throws IOException;
         
@@ -415,12 +422,12 @@ public abstract class AbstractFileProviderTest {
         assertFalse(provider.get("/nonExisting").exists());
 
         // Test file deletion is reflected in entries returned by the provider
-        ufs.delete("/new-folder/file.txt");
+        ufs.deleteFile("/new-folder/file.txt");
         assertFalse(provider.get("/new-folder/file.txt").exists());
         assertEquals(List.of(), provider.get("/new-folder").asFolder().list().stream().map(Entry::getName).toList());
 
         // Test folder deletion is reflected in entries returned by the provider
-        ufs.delete("/new-folder");
+        ufs.deleteFolder("/new-folder");
         assertFalse(provider.get("/new-folder").exists());
         assertFalse(provider.get(FileProvider.ROOT_PATH).asFolder().list().stream().map(Entry::getName).toList().contains("new-folder"));
     }
