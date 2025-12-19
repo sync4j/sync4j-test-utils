@@ -305,7 +305,6 @@ public abstract class AbstractFileProviderTest {
 
             // Check progress listener + copying to an existing file
             AtomicLong progress = new AtomicLong();
-            System.out.println("Source file size: " + sourceFile.getSize());
             dest.copy("copied.txt", sourceFile, progress::set);
             assertEquals(sourceFile.getSize(), progress.get(), "Progress should match copied content size");
 
@@ -336,7 +335,9 @@ public abstract class AbstractFileProviderTest {
             assertFalse(root.list().stream().anyMatch(e -> e.getName().equals("test.txt")), "File should be in root.list() after deletion");
             Entry afterDelete = provider.get("/test.txt");
             assertFalse(afterDelete.exists(), "File should not exist after deletion");
+            assertDoesNotThrow(afterDelete::delete);
         } finally {
+            // Check that folder can be deleted twice
             entry.delete();
         }
     }
