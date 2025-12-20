@@ -99,7 +99,7 @@ class AbstractNonWritableFileProviderTestTest extends AbstractNonWritableFilePro
         }
 
         @Override
-        public void assertUnderlyingFolderExist(String path) throws IOException {
+        public boolean underlyingFolderExists(String path) throws IOException {
             throw new UnsupportedOperationException();
         }
     }

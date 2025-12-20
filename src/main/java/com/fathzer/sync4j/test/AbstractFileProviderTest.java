@@ -38,56 +38,6 @@ public abstract class AbstractFileProviderTest {
     public @interface NoWriteSupport {
     }
 
-    /**
-     * The underlying file system.
-     * <br>This interface is used to assert that the file provider and the underlying file system are in sync.
-     */
-    public interface UnderlyingFileSystem {
-        /**
-         * Create a file.
-         * @param path the path of the file to create (relative to the root folder - e.g. "/folder/file.txt")
-         * @throws IOException if an I/O error occurs, typically if the file already exists or the parent folder does not exist
-         */
-        void createFile(String path) throws IOException;
-        
-        /**
-         * Delete a file.
-         * @param path the path of the file to delete (relative to the root folder - e.g. "/folder/file.txt")
-         * @throws IOException if an I/O error occurs, typically if the file does not exist
-         */
-        void deleteFile(String path) throws IOException;
-        
-        /**
-         * Delete a folder.
-         * <br>If called on a folder, the implementor can assume that the folder is empty.
-         * @param path the path of the folder to delete (relative to the root folder - e.g. "/folder/subfolder")
-         * @throws IOException if an I/O error occurs, typically if the folder does not exist
-         */
-        void deleteFolder(String path) throws IOException;
-
-        /**
-         * Create a folder.
-         * @param path the path of the folder to create (relative to the root folder - e.g. "/folder")
-         * @throws IOException if an I/O error occurs, typically if the folder already exists or the parent folder does not exist
-         */
-        void createFolder(String path) throws IOException;
-        
-        /**
-         * Assert that the file exists and its content is equal to the given file.
-         * @param path the path of the file to assert (relative to the root folder - e.g. "/folder/file.txt")
-         * @param file the file to compare to
-         * @throws IOException if an I/O error occurs, typically if the file does not exist
-         */
-        void assertUnderlyingFileEquals(String path, File file) throws IOException;
-        
-        /**
-         * Assert that the folder exists.
-         * @param path the path of the folder to assert (relative to the root folder - e.g. "/folder")
-         * @throws IOException if an I/O error occurs
-         */
-        void assertUnderlyingFolderExist(String path) throws IOException;
-    }
-
     /** The root folder.
      * <br>This folder is created in the setup method.
      */
@@ -118,11 +68,14 @@ public abstract class AbstractFileProviderTest {
     /**
      * Cleans up the file provider created in {@link #createFileProvider(TestInfo)}. 
      * <br>This method is called during the @AfterEach phase of the JUnit test.
-     * <br>By default, this method does nothing.
+     * <br>By default, this method closes the file provider returned by {@link #createFileProvider(TestInfo)}.
+     * <br>Subclasses can override this method to perform additional cleanup (for instance to clean up the underlying file system).
      * @throws IOException if an I/O error occurs
      */
     protected void cleanUpProvider() throws IOException {
-        // Do nothing by default
+        if (provider != null) {
+            provider.close();
+        }
     }
 
     /**
@@ -132,7 +85,7 @@ public abstract class AbstractFileProviderTest {
     protected abstract UnderlyingFileSystem getUnderlyingFileSystem();
 
     @BeforeEach
-    protected void setup(TestInfo testInfo) throws IOException {
+    void setup(TestInfo testInfo) throws IOException {
         provider = createFileProvider(testInfo);
         assumeTrue(provider != null, "Provider not available");
         root = provider.get(FileProvider.ROOT_PATH).asFolder();
@@ -140,18 +93,24 @@ public abstract class AbstractFileProviderTest {
     }
 
     @AfterEach
+    /**
+     * Cleans up the file provider created in {@link #createFileProvider(TestInfo)}.
+     * <br>This method is called during the @AfterEach phase of the JUnit test.
+     * <br>By default, this method calls {@link #cleanUpProvider()}.
+     * @throws IOException if an I/O error occurs
+     */
     void teardown() throws IOException {
         cleanUpProvider();
-        if (root != null) {
-            root.getFileProvider().close();
-        }
     }
 
     protected static File createMockFile(String content) throws IOException {
         File result = Mockito.mock(File.class);
         byte[] bytes = content.getBytes();
         Mockito.lenient().when(result.getInputStream()).thenAnswer(invocation -> new ByteArrayInputStream(bytes));
-        Mockito.lenient().when(result.getSize()).thenReturn((long)bytes.length);
+        Mockito.lenient().when(result.getSize()).thenReturn((long) bytes.length);
+        long now = System.currentTimeMillis();
+        Mockito.lenient().when(result.getLastModifiedTime()).thenReturn(now);
+        Mockito.lenient().when(result.getCreationTime()).thenReturn(now-1000);
         return result;
     }
 
@@ -433,13 +392,19 @@ public abstract class AbstractFileProviderTest {
     }
 
     @Test
-    void testChangesUnderlyingFileSystem() throws IOException {
+    protected void testChangesUnderlyingFileSystem() throws IOException {
         assumeTrue(provider.isWriteSupported(), "Test skipped because provider doesn't support write");
         assumeTrue(ufs != null, "Test skipped because provider has no underlying filesystem");
 
+        File mockFile = createMockFile("content");
+        Folder folder = root.mkdir("folder");
+        assertTrue(ufs.underlyingFolderExists("/folder"));
 
-//fail("Not implemented");
-        // TODO
+        folder.copy("file.txt", mockFile, null);
+        ufs.assertUnderlyingFileEquals("/folder/file.txt", mockFile);
+        
+        folder.delete();
+        assertFalse(ufs.underlyingFolderExists("/folder"));
     }
     
     @Test
