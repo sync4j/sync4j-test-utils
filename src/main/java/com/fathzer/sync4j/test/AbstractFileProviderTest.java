@@ -153,6 +153,16 @@ public abstract class AbstractFileProviderTest {
         Entry file = getAFile();
         Entry inconsistentPathFile = provider.get(file.getPath() + "/toto.txt");
         assertFalse(inconsistentPathFile.exists());
+
+        // Check non existing parent is really not existing
+        Entry nonExistingParentFile = getMissingEntry("/folder");
+        String path = nonExistingParentFile.getPath()+"/file.txt";
+        file = provider.get(path);
+        assertFalse(file.exists());
+        Entry parent = file.getParent();
+        assertFalse(parent.exists());
+        assertFalse(parent.isFolder());
+        assertFalse(parent.isFile());
     }
 
     @Test
