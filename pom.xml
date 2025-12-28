@@ -8,6 +8,15 @@
   <artifactId>sync4j-test-utils</artifactId>
   <version>0.0.1</version>
 
+  <name>sync4j-test-utils</name>
+	<description>Test utils for sync4j</description>
+	<url>https://github.com/sync4j/sync4j-test-utils</url>
+
+	<scm>
+		<url>https://github.com/sync4j/sync4j-test-utils.git</url>
+		<connection>https://github.com/sync4j/sync4j-test-utils.git</connection>
+	</scm>
+
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.source>17</maven.compiler.source>

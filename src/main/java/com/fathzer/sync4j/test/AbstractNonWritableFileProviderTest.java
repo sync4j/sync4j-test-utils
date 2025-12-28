@@ -15,6 +15,11 @@ import com.fathzer.sync4j.Folder;
  * @see AbstractNonWritableFileProviderTest
 */
 public abstract class AbstractNonWritableFileProviderTest extends AbstractFileProviderTest {
+    /** Constructor */
+    protected AbstractNonWritableFileProviderTest() {
+        // Do nothing
+    }
+
     @Override
     protected Folder getAFolder() throws IOException {
         return searchFor(root, Entry::isFolder, "folder", "Unable to find a folder to perform tests").asFolder();

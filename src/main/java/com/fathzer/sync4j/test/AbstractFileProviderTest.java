@@ -32,6 +32,12 @@ import jakarta.annotation.Nullable;
  * @see AbstractNonWritableFileProviderTest
 */
 public abstract class AbstractFileProviderTest {
+
+    /** Constructor */
+    protected AbstractFileProviderTest() {
+        // Do nothing
+    }
+
     /** An annotation to declare there's no write support expected. */
     @Target(ElementType.TYPE)
     @Retention(RetentionPolicy.RUNTIME)
@@ -59,6 +65,7 @@ public abstract class AbstractFileProviderTest {
     /**
      * Creates the file provider.
      * <br>This method is called in the setup method, during the @BeforeEach phase of the JUnit test.
+     * @param testInfo the test info
      * @return the file provider, or null if the test should be skipped
      * @throws IOException if an I/O error occurs
      */
@@ -84,6 +91,12 @@ public abstract class AbstractFileProviderTest {
      */
     protected abstract UnderlyingFileSystem getUnderlyingFileSystem();
 
+    /**
+     * Creates the file provider, get its root folder and underlying file system.
+     * <br>This method is called during the @BeforeEach phase of the JUnit test and calls {@link #createFileProvider(TestInfo)} and {@link #getUnderlyingFileSystem()}. 
+     * @param testInfo the test info
+     * @throws IOException if an I/O error occurs
+     */
     @BeforeEach
     void setup(TestInfo testInfo) throws IOException {
         provider = createFileProvider(testInfo);
@@ -103,6 +116,14 @@ public abstract class AbstractFileProviderTest {
         cleanUpProvider();
     }
 
+    /**
+     * Creates a mock file.
+     * <br>By default, this method creates a mock file with the given content, {@link File#getSize() size} set to the length of the content, {@link File#getLastModifiedTime() last modified time} set to the current time, and {@link File#getCreationTime() creation time} set to the current time minus 1000.
+     * <br>All stubs are lenient.
+     * @param content the content of the file
+     * @return the mock file
+     * @throws IOException if an I/O error occurs
+     */
     protected static File createMockFile(String content) throws IOException {
         File result = Mockito.mock(File.class);
         byte[] bytes = content.getBytes();
@@ -114,16 +135,35 @@ public abstract class AbstractFileProviderTest {
         return result;
     }
 
+    /**
+     * Returns an existing folder.
+     * <br>By default, this method returns the folder "/folder" using {@link #provider}'s methods. It creates it if it doesn't exist.
+     * @return the folder
+     * @throws IOException if an I/O error occurs
+     */
     protected Folder getAFolder() throws IOException {
         Entry entry = provider.get("/folder");
         return entry.isFolder() ? entry.asFolder() : root.mkdir("folder");
     }
 
+    /**
+     * Returns an existing file.
+     * <br>By default, this method returns the file "/folder/file.txt" using {@link #provider}'s methods. It creates it if it doesn't exist (including the folder).
+     * @return the file
+     * @throws IOException if an I/O error occurs
+     */
     protected File getAFile() throws IOException {
         Entry entry = provider.get("/folder/file.txt");
         return entry.isFile() ? entry.asFile() : getAFolder().copy("file.txt", createMockFile("content"), null);
     }
 
+    /**
+     * Returns a missing entry.
+     * <br>By default, this method returns a missing entry using {@link #provider}'s methods to find a missing under the root and named "<i>prefix</i>/missingX" where X is a number &lt; 100.
+     * @param prefix the prefix of the entry (a folder path). Empty for root folder. The folder can exist or not and will not be created.
+     * @return the entry
+     * @throws IOException if an I/O error occurs (for instance if we can't find a missing entry)
+     */
     protected Entry getMissingEntry(String prefix) throws IOException {
         for (int i = 0; i < 100; i++) {
             Entry entry = provider.get(prefix + "/missing" + i);
@@ -134,6 +174,10 @@ public abstract class AbstractFileProviderTest {
         throw new IOException("Not able to find a missing entry named /" + prefix + "/missingX where X is a < 100");
     }
 
+    /**
+     * Tests the root folder.
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testRoot() throws IOException {
         assertTrue(root.exists(), "Root should exist");
@@ -144,6 +188,10 @@ public abstract class AbstractFileProviderTest {
         assertThrows(IOException.class, () -> root.delete(), "Root should not be deleted");
     }
 
+    /**
+     * Tests the {@link #provider}'s get method.
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testGet() throws IOException {
         assertThrows(IllegalArgumentException.class, () -> provider.get("/folder//file.txt"), "Invalid path (double slash) should not be retrieved");
@@ -165,6 +213,10 @@ public abstract class AbstractFileProviderTest {
         assertFalse(parent.isFile());
     }
 
+    /**
+     * Tests the {@link #provider}'s getParent method.
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testGetParent() throws IOException {
         // Check get parent on missing file does not throw IOException
@@ -185,6 +237,10 @@ public abstract class AbstractFileProviderTest {
         assertTrue(parent.isFile());
     }
 
+    /**
+     * Tests the {@link #provider}'s getFileProvider method.
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testGetProvider() throws IOException {
         assertSame(provider, root.getFileProvider());
@@ -196,21 +252,10 @@ public abstract class AbstractFileProviderTest {
         assertSame(provider, entry.getFileProvider());
     }
 
-    @Test
-    protected void testAsFileAndAsFolder() throws IOException {
-        File file = getAFile();
-        assertDoesNotThrow(file::asFile);
-        assertThrows(IllegalStateException.class, file::asFolder);
-
-        Folder folder = getAFolder();
-        assertDoesNotThrow(folder::asFolder);
-        assertThrows(IllegalStateException.class, folder::asFile);
-
-        Entry entry = getMissingEntry("");
-        assertThrows(IllegalStateException.class, entry::asFile);
-        assertThrows(IllegalStateException.class, entry::asFolder);
-    }
-
+    /**
+     * Tests folder listing ({@link Folder#list()}).
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testFolderList() throws IOException {
         Folder parent = root.mkdir(getMissingEntry(FileProvider.ROOT_PATH).getName());
@@ -229,6 +274,10 @@ public abstract class AbstractFileProviderTest {
         }
     }
 
+    /**
+     * Tests folder creation ({@link Folder#mkdir(String)}).
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testFolderMkdir() throws IOException {
         assumeTrue(provider.isWriteSupported(), "Test skipped because provider is not writable");
@@ -258,6 +307,10 @@ public abstract class AbstractFileProviderTest {
         }
     }
     
+    /**
+     * Tests file copy ({@link Folder#copy(String, File, ProgressListener)}).
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testFolderCopy() throws IOException {
         assumeTrue(provider.isWriteSupported(), "Test skipped because provider is not writable");
@@ -297,6 +350,10 @@ public abstract class AbstractFileProviderTest {
         }
     }
     
+    /**
+     * Tests file deletion.
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testDeleteFile() throws IOException {
         assumeTrue(provider.isWriteSupported(), "Test skipped because provider is not writable");
@@ -318,6 +375,10 @@ public abstract class AbstractFileProviderTest {
         }
     }
 
+    /**
+     * Tests folder deletion.
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testDeleteFolder() throws IOException {
         assumeTrue(provider.isWriteSupported(), "Test skipped because provider is not writable");
@@ -353,6 +414,10 @@ public abstract class AbstractFileProviderTest {
         assertThrows(IOException.class, () -> root.delete(), "Should throw IOException when root folder is deleted");
     }
     
+    /**
+     * Tests that {@link Folder#preload()} exception throwing is consistent with {@link FileProvider#isFastListSupported()}
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testPreload() throws IOException {
         Folder folder = getAFolder();
@@ -401,6 +466,12 @@ public abstract class AbstractFileProviderTest {
         assertFalse(provider.get(FileProvider.ROOT_PATH).asFolder().list().stream().map(Entry::getName).toList().contains("new-folder"));
     }
 
+    /**
+     * Tests that the provider can change the underlying file system.
+     * <br>This test is skipped if the provider doesn't support write or has no underlying file system.
+     * @throws IOException if an I/O error occurs
+     * @see #getUnderlyingFileSystem()
+     */
     @Test
     protected void testChangesUnderlyingFileSystem() throws IOException {
         assumeTrue(provider.isWriteSupported(), "Test skipped because provider doesn't support write");
@@ -417,6 +488,10 @@ public abstract class AbstractFileProviderTest {
         assertFalse(ufs.underlyingFolderExists("/folder"));
     }
     
+    /**
+     * Tests isFile, isFolder, exists, asFile, asFolder.
+     * @throws IOException if an I/O error occurs
+     */
     @Test
     protected void testIsFileAndSimilar() throws IOException {
         File file = getAFile();
@@ -440,7 +515,10 @@ public abstract class AbstractFileProviderTest {
         assertThrows(IllegalStateException.class, nonExisting::asFolder);
         assertThrows(IllegalStateException.class, nonExisting::asFile);
     }
-
+    
+    /**
+     * Test that the provider supports write (if not {@link AbstractNonWritableFileProviderTest} should be used instead of this class).
+     */
     @Test
     protected void testWriteSupported() {
         assertTrue(provider.isWriteSupported());
@@ -448,6 +526,7 @@ public abstract class AbstractFileProviderTest {
 
     /**
      * Test the read-only mode.
+     * @throws IOException if an I/O error occurs
      */
     @Test
     protected void testReadOnlyMode() throws IOException {
