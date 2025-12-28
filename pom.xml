@@ -1,0 +1,49 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="https://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.fathzer</groupId>
+    <artifactId>parent-pom</artifactId>
+    <version>1.1.0</version>
+  </parent>
+  <artifactId>sync4j-test-utils</artifactId>
+  <version>0.0.1</version>
+
+  <name>sync4j-test-utils</name>
+	<description>Test utils for sync4j</description>
+	<url>https://github.com/sync4j/sync4j-test-utils</url>
+
+	<scm>
+		<url>https://github.com/sync4j/sync4j-test-utils.git</url>
+		<connection>https://github.com/sync4j/sync4j-test-utils.git</connection>
+	</scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+  </properties>
+  
+  <dependencies>
+    <dependency>
+      <groupId>com.fathzer</groupId>
+      <artifactId>sync4j</artifactId>
+      <version>0.0.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.14.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-junit-jupiter</artifactId>
+      <version>5.21.0</version>
+    </dependency>
+    <dependency>
+      <groupId>jakarta.annotation</groupId>
+      <artifactId>jakarta.annotation-api</artifactId>
+      <version>2.1.1</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>
