@@ -1,6 +1,7 @@
 package com.fathzer.sync4j.test;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayInputStream;
@@ -24,6 +25,7 @@ import com.fathzer.sync4j.Entry;
 import com.fathzer.sync4j.File;
 import com.fathzer.sync4j.FileProvider;
 import com.fathzer.sync4j.Folder;
+import com.fathzer.sync4j.HashAlgorithm;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -148,7 +150,7 @@ public abstract class AbstractFileProviderTest {
 
     /**
      * Returns an existing file.
-     * <br>By default, this method returns the file "/folder/file.txt" using {@link #provider}'s methods. It creates it if it doesn't exist (including the folder).
+     * <br>By default, this method returns the file "/folder/file.txt" using {@link #provider}'s methods. It creates it if it doesn't exist (including the folder) and put "content" in it.
      * @return the file
      * @throws IOException if an I/O error occurs
      */
@@ -559,5 +561,22 @@ public abstract class AbstractFileProviderTest {
         assertDoesNotThrow(() -> root.mkdir("subfolder"));
         assertDoesNotThrow(() -> root.copy("copy.txt", testFile, null));
         assertDoesNotThrow(testFile::delete);
+    }
+
+    /**
+     * Tests file.getHash() computation.
+     * @throws IOException if an I/O error occurs
+     */
+    @Test
+    protected void testGetHash() throws IOException {
+        assumeFalse(provider.getSupportedHash().isEmpty());
+        File file = getAFile();
+        byte[] bytes;
+        try (InputStream is = file.getInputStream()) {
+            bytes = is.readAllBytes();
+        }
+        for (HashAlgorithm hash : provider.getSupportedHash()) {
+            assertEquals(hash.computeHash(bytes), file.getHash(hash));
+        }
     }
 }
