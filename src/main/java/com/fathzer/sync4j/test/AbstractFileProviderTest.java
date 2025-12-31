@@ -365,7 +365,7 @@ public abstract class AbstractFileProviderTest {
             entry.delete();
 
             // Then
-            assertFalse(root.list().stream().anyMatch(e -> e.getName().equals("test.txt")), "File should be in root.list() after deletion");
+            assertFalse(root.list().stream().anyMatch(e -> e.getName().equals("test.txt")), "File should not be in root.list() after deletion");
             Entry afterDelete = provider.get("/test.txt");
             assertFalse(afterDelete.exists(), "File should not exist after deletion");
             assertDoesNotThrow(afterDelete::delete);
