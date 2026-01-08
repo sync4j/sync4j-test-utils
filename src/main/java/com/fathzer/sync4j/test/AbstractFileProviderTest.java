@@ -1,7 +1,7 @@
 package com.fathzer.sync4j.test;
 
+import static org.awaitility.Awaitility.*;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayInputStream;
@@ -12,8 +12,10 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +28,7 @@ import com.fathzer.sync4j.File;
 import com.fathzer.sync4j.FileProvider;
 import com.fathzer.sync4j.Folder;
 import com.fathzer.sync4j.HashAlgorithm;
+import com.fathzer.sync4j.util.IOLambda.IORunnable;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -120,13 +123,13 @@ public abstract class AbstractFileProviderTest {
 
     /**
      * Creates a mock file.
-     * <br>By default, this method creates a mock file with the given content, {@link File#getSize() size} set to the length of the content, {@link File#getLastModifiedTime() last modified time} set to the current time, and {@link File#getCreationTime() creation time} set to the current time minus 1000.
+     * <br>This method creates a mock file with the given content, {@link File#getSize() size} set to the length of the content, {@link File#getLastModifiedTime() last modified time} set to the current time, and {@link File#getCreationTime() creation time} set to the current time minus 1000.
      * <br>All stubs are lenient.
      * @param content the content of the file
      * @return the mock file
      * @throws IOException if an I/O error occurs
      */
-    protected static File createMockFile(String content) throws IOException {
+    public static File createMockFile(String content) throws IOException {
         File result = Mockito.mock(File.class);
         byte[] bytes = content.getBytes();
         Mockito.lenient().when(result.getInputStream()).thenAnswer(invocation -> new ByteArrayInputStream(bytes));
@@ -137,6 +140,7 @@ public abstract class AbstractFileProviderTest {
         return result;
     }
 
+    private Folder folder;
     /**
      * Returns an existing folder.
      * <br>By default, this method returns the folder "/folder" using {@link #provider}'s methods. It creates it if it doesn't exist.
@@ -144,10 +148,15 @@ public abstract class AbstractFileProviderTest {
      * @throws IOException if an I/O error occurs
      */
     protected Folder getAFolder() throws IOException {
-        Entry entry = provider.get("/folder");
-        return entry.isFolder() ? entry.asFolder() : root.mkdir("folder");
+        // Warning: if provider is eventually consistent, this method can't simply test if the folder exists using provider.get("/folder").isFolder() and create it if not.
+        // The reason is that the folder might have been created but not yet consistent, and seen as a non existing entry.
+        if (folder==null) {
+            folder = root.mkdir("folder");
+        }
+        return folder;
     }
 
+    private File existingFile;
     /**
      * Returns an existing file.
      * <br>By default, this method returns the file "/folder/file.txt" using {@link #provider}'s methods. It creates it if it doesn't exist (including the folder) and put "content" in it.
@@ -155,8 +164,12 @@ public abstract class AbstractFileProviderTest {
      * @throws IOException if an I/O error occurs
      */
     protected File getAFile() throws IOException {
-        Entry entry = provider.get("/folder/file.txt");
-        return entry.isFile() ? entry.asFile() : getAFolder().copy("file.txt", createMockFile("content"), null);
+        // Warning: if provider is eventually consistent, this method can't simply test if the folder exists using provider.get("/folder/file.txt").isFile() and create it if not.
+        // The reason is that the file might have been created but not yet consistent, and seen as a non existing entry.
+        if (existingFile == null) {
+            doAssert(() -> existingFile = getAFolder().copy("file.txt", createMockFile("content"), null));
+        }
+        return existingFile;
     }
 
     /**
@@ -167,6 +180,7 @@ public abstract class AbstractFileProviderTest {
      * @throws IOException if an I/O error occurs (for instance if we can't find a missing entry)
      */
     protected Entry getMissingEntry(String prefix) throws IOException {
+        //FIXME: Be aware of eventual consistency
         for (int i = 0; i < 100; i++) {
             Entry entry = provider.get(prefix + "/missing" + i);
             if (!entry.exists()) {
@@ -176,18 +190,32 @@ public abstract class AbstractFileProviderTest {
         throw new IOException("Not able to find a missing entry named /" + prefix + "/missingX where X is a < 100");
     }
 
+    protected Duration getConsistencyTimeout() {
+        return Duration.ofSeconds(0);
+    }
+
+    private void doAssert(IORunnable runnable) throws IOException {
+        if (getConsistencyTimeout().isZero()) {
+            runnable.run();
+        } else {
+            await().atMost(getConsistencyTimeout()).ignoreExceptions().untilAsserted(runnable::run);
+        }
+    }
+
     /**
      * Tests the root folder.
      * @throws IOException if an I/O error occurs
      */
     @Test
     protected void testRoot() throws IOException {
-        assertTrue(root.exists(), "Root should exist");
-        assertTrue(root.isFolder(), "Root should be a folder");
-        assertFalse(root.isFile(), "Root should not be a file");
-        assertEquals("", root.getName(), "Root should have no name");
-        assertNull(root.getParent(), "Root should have no parent");
-        assertThrows(IOException.class, () -> root.delete(), "Root should not be deleted");
+        doAssert(() -> {
+            assertTrue(root.exists(), "Root should exist");
+            assertTrue(root.isFolder(), "Root should be a folder");
+            assertFalse(root.isFile(), "Root should not be a file");
+            assertEquals("", root.getName(), "Root should have no name");
+            assertNull(root.getParent(), "Root should have no parent");
+            assertThrows(IOException.class, () -> root.delete(), "Root should not be deleted");
+        });
     }
 
     /**
@@ -198,21 +226,23 @@ public abstract class AbstractFileProviderTest {
     protected void testGet() throws IOException {
         assertThrows(IllegalArgumentException.class, () -> provider.get("/folder//file.txt"), "Invalid path (double slash) should not be retrieved");
         assertThrows(IllegalArgumentException.class, () -> provider.get("folder/file.txt"), "Invalid path (no leading slash) should not be retrieved");
-
-        // Check inconsistent path does not throw any exception and returns a non existing entry
         Entry file = getAFile();
-        Entry inconsistentPathFile = provider.get(file.getPath() + "/toto.txt");
-        assertFalse(inconsistentPathFile.exists());
-
-        // Check non existing parent is really not existing
         Entry nonExistingParentFile = getMissingEntry("/folder");
+        doAssert(() -> {
+            // Check inconsistent path does not throw any exception and returns a non existing entry
+            Entry inconsistentPathFile = provider.get(file.getPath() + "/toto.txt");
+            assertFalse(inconsistentPathFile.exists());
+        });
+        // Check non existing parent is really not existing
         String path = nonExistingParentFile.getPath()+"/file.txt";
-        file = provider.get(path);
-        assertFalse(file.exists());
-        Entry parent = file.getParent();
-        assertFalse(parent.exists());
-        assertFalse(parent.isFolder());
-        assertFalse(parent.isFile());
+        Entry file2 = provider.get(path);
+        doAssert(() -> {
+            assertFalse(file2.exists());
+            Entry parent = file2.getParent();
+            assertFalse(parent.exists());
+            assertFalse(parent.isFolder());
+            assertFalse(parent.isFile());
+        });
     }
 
     /**
@@ -221,22 +251,24 @@ public abstract class AbstractFileProviderTest {
      */
     @Test
     protected void testGetParent() throws IOException {
-        // Check get parent on missing file does not throw IOException
         Entry missingFolder = getMissingEntry("");
-        assertFalse(missingFolder.exists());
-        Entry file = provider.get(missingFolder.getPath() + "/file.txt");
-        assertDoesNotThrow(file::getParent, "Parent of a missing file should be retrieved");
-        
-        // Check get parent on existing file
-        file = getAFile();
-        assertTrue(file.exists());
-        Entry parent = file.getParent();
-        assertEquals(parent.getPath() + "/" + file.getName(), file.getPath());
+        Entry fileInMissingFolder = provider.get(missingFolder.getPath() + "/file.txt");
+        File file = getAFile();
+        doAssert(() -> {
+            // Check get parent on missing file does not throw IOException
+            assertFalse(missingFolder.exists());
+            assertDoesNotThrow(fileInMissingFolder::getParent, "Parent of a missing file should be retrieved");
+            
+            // Check get parent on existing file
+            assertTrue(file.exists());
+            Entry parent = file.getParent();
+            assertEquals(parent.getPath() + "/" + file.getName(), file.getPath());
 
-        // Check parent on missing entry with a file as parent
-        file = getMissingEntry(file.getPath());
-        parent = file.getParent();
-        assertTrue(parent.isFile());
+            // Check parent on missing entry with a file as parent
+            Entry missing = getMissingEntry(file.getPath());
+            parent = missing.getParent();
+            assertTrue(parent.isFile());
+        });
     }
 
     /**
@@ -396,7 +428,7 @@ public abstract class AbstractFileProviderTest {
 
         // Then
         assertFalse(root.list().stream().anyMatch(e -> e.getName().equals("parent")),
-                "Folder should be in root.list() after deletion");
+                "Folder should not be in root.list() after deletion");
         Entry afterDelete = provider.get("/parent");
         assertFalse(afterDelete.exists(), "Folder should not exist after deletion");
 
@@ -569,14 +601,29 @@ public abstract class AbstractFileProviderTest {
      */
     @Test
     protected void testGetHash() throws IOException {
-        assumeFalse(provider.getSupportedHash().isEmpty());
         File file = getAFile();
-        byte[] bytes;
-        try (InputStream is = file.getInputStream()) {
-            bytes = is.readAllBytes();
-        }
-        for (HashAlgorithm hash : provider.getSupportedHash()) {
-            assertEquals(hash.computeHash(bytes), file.getHash(hash));
-        }
+        List<HashAlgorithm> supportedHash = provider.getSupportedHash();
+        doAssert(() -> {
+            if (!supportedHash.isEmpty()) {
+                byte[] bytes;
+                try (InputStream is = file.getInputStream()) {
+                    bytes = is.readAllBytes();
+                }
+                for (HashAlgorithm hash : supportedHash) {
+                    assertEquals(hash.computeHash(bytes), file.getHash(hash));
+                }
+            }
+
+            // Check null hash algorithm
+            assertThrows(NullPointerException.class, () -> file.getHash(null));
+
+            // Check unknown hash algorithm
+            if (supportedHash.size() != HashAlgorithm.values().length) {
+                List<HashAlgorithm> unknownHash = Stream.of(HashAlgorithm.values()).filter(hash -> !supportedHash.contains(hash)).toList();
+                for (HashAlgorithm hash : unknownHash) {
+                    assertThrows(UnsupportedOperationException.class, () -> file.getHash(hash));
+                }
+            }
+        });
     }
 }
