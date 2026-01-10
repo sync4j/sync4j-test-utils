@@ -58,7 +58,6 @@ class EventuallyConsistentFileProviderTest {
         
         // Trying to use the folder should throw IOException
         assertThrows(IOException.class, folder::list, "Should throw IOException when listing non-visible folder");
-        assertThrows(IOException.class, folder::delete, "Should throw IOException when deleting non-visible folder");
         
         // Wait for consistency delay to pass
         waitForConsistency();
@@ -71,7 +70,7 @@ class EventuallyConsistentFileProviderTest {
         assertEquals(1, root.list().size(), "Parent should list the folder after consistency delay");
         
         // Operations should now work
-        assertDoesNotThrow(() -> folder.list(), "Should not throw when listing visible folder");
+        assertDoesNotThrow(folder::list, "Should not throw when listing visible folder");
     }
     
     @Test
@@ -95,7 +94,6 @@ class EventuallyConsistentFileProviderTest {
         // Trying to use the file should throw IOException
         assertThrows(IOException.class, file::getSize, "Should throw IOException when getting size of non-visible file");
         assertThrows(IOException.class, file::getInputStream, "Should throw IOException when getting input stream of non-visible file");
-        assertThrows(IOException.class, file::delete, "Should throw IOException when deleting non-visible file");
         
         // Wait for consistency delay to pass
         waitForConsistency();
@@ -172,5 +170,38 @@ class EventuallyConsistentFileProviderTest {
         assertTrue(underlying.isReadOnly());
         provider.close();
         assertTrue(closed.get());
+    }
+
+    @Test
+    void testRootDeletionFails() throws IOException {
+        // Get root folder
+        Folder root = provider.get(MemoryFileProvider.ROOT_PATH).asFolder();
+        
+        // Trying to delete root should fail
+        assertThrows(IOException.class, root::delete, "Should throw IOException when deleting root folder");
+    }
+
+    @Test
+    void testDelete() throws IOException, InterruptedException {
+        // Get root folder
+        Folder root = provider.get(MemoryFileProvider.ROOT_PATH).asFolder();
+
+        // Create a folder
+        Folder folder1 = root.mkdir("folder1");
+        
+        // Wait for it to become visible
+        waitForConsistency();
+        
+        // Delete the folder
+        folder1.delete();
+
+        // Verify it's not gone immediately (delete is immediate)
+        assertTrue(root.list().stream().anyMatch(e -> e.getName().equals("folder1")), "Folder should still be in root.list() immediately after deletion");
+        
+        // Wait for it to become invisible
+        waitForConsistency();
+        
+        // Verify it's gone
+        assertFalse(root.list().stream().anyMatch(e -> e.getName().equals("folder1")), "Folder should not be in root.list() after deletion and consistency reached");
     }
 }

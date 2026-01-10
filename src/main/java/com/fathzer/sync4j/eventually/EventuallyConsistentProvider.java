@@ -6,6 +6,8 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongConsumer;
 
@@ -13,6 +15,7 @@ import com.fathzer.sync4j.Entry;
 import com.fathzer.sync4j.File;
 import com.fathzer.sync4j.Folder;
 import com.fathzer.sync4j.HashAlgorithm;
+import com.fathzer.sync4j.util.IOLambda.IORunnable;
 import com.fathzer.sync4j.FileProvider;
 
 import jakarta.annotation.Nonnull;
@@ -35,6 +38,7 @@ import jakarta.annotation.Nonnull;
  * </p>
  */
 public class EventuallyConsistentProvider implements FileProvider {
+    private static final Timer TIMER = new Timer("EventuallyConsistentProvider", true);
     
     private final long consistencyDelayMs;
     private final FileProvider provider;
@@ -65,6 +69,12 @@ public class EventuallyConsistentProvider implements FileProvider {
     @Override
     public boolean isReadOnly() {
         return provider.isReadOnly();
+    }
+
+    private void checkReadOnly() throws IOException {
+        if (provider.isReadOnly()) {
+            throw new IOException("Cannot modify entry in read-only provider");
+        }
     }
 
     @Override
@@ -159,13 +169,27 @@ public class EventuallyConsistentProvider implements FileProvider {
 
         @Override
         public void delete() throws IOException {
-            delegate.delete();
+            checkReadOnly();
+            TIMER.schedule(toTask(delegate::delete), consistencyDelayMs);
         }
 
         @Override
         public FileProvider getFileProvider() {
             return EventuallyConsistentProvider.this;
         }
+    }
+
+    private TimerTask toTask(IORunnable runnable) {
+        return new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    runnable.run();
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            }
+        };
     }
 
     /**
@@ -212,8 +236,8 @@ public class EventuallyConsistentProvider implements FileProvider {
         
         @Override
         public void delete() throws IOException {
-            checkConsistency();
-            delegate.delete();
+            checkReadOnly();
+            TIMER.schedule(toTask(delegate::delete), consistencyDelayMs);
         }
         
         @Override
@@ -311,8 +335,11 @@ public class EventuallyConsistentProvider implements FileProvider {
         
         @Override
         public void delete() throws IOException {
-            checkConsistency();
-            delegate.delete();
+            checkReadOnly();
+            if (delegate.getPath().equals(FileProvider.ROOT_PATH)) {
+                throw new IOException("Cannot delete root folder");
+            }
+            TIMER.schedule(toTask(delegate::delete), consistencyDelayMs);
         }
         
         @Override
