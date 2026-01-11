@@ -206,7 +206,10 @@ public abstract class AbstractFileProviderTest {
         return Duration.ofSeconds(0);
     }
 
-    /** Performs an assertion, or a task that may need to wait for consistency */
+    /** Performs an assertion, or a task that may need to wait for consistency
+     * @param runnable the assertion or task to perform
+     * @throws IOException if an I/O error occurs while running the runnable
+     */
     protected void doAssert(IORunnable runnable) throws IOException {
         if (getConsistencyTimeout().isZero()) {
             runnable.run();
@@ -306,11 +309,9 @@ public abstract class AbstractFileProviderTest {
     @Test
     protected void testFolderList() throws IOException {
         Folder parent = root.mkdir(getMissingEntry(FileProvider.ROOT_PATH).getName());
-        doAssert(() -> {
-            parent.copy("file1.txt", createMockFile("content1"), null);
-            parent.copy("file2.txt", createMockFile("content2"), null);
-            parent.mkdir("subfolder");
-        });
+        doAssert(() -> parent.copy("file1.txt", createMockFile("content1"), null));
+        doAssert(() -> parent.copy("file2.txt", createMockFile("content2"), null));
+        doAssert(() -> parent.mkdir("subfolder"));
         doAssert(() -> {
             Entry entry = provider.get(parent.getPath());
             Folder folder = entry.asFolder();
@@ -486,30 +487,38 @@ public abstract class AbstractFileProviderTest {
 
         // Test folder creation is reflected in entries returned by the provider
         ufs.createFolder("/new-folder");
-        Folder folder = provider.get("/new-folder").asFolder();
-        assertTrue(folder.exists());
-        assertTrue(folder.list().isEmpty());
-        assertTrue(provider.get(FileProvider.ROOT_PATH).asFolder().list().stream().map(Entry::getName).toList().contains("new-folder"));
+        doAssert(() -> {
+            Folder folder = provider.get("/new-folder").asFolder();
+            assertTrue(folder.exists());
+            assertTrue(folder.list().isEmpty());
+            assertTrue(provider.get(FileProvider.ROOT_PATH).asFolder().list().stream().map(Entry::getName).toList().contains("new-folder"));
+        });
 
         // Test file creation is reflected in entries returned by the provider
         ufs.createFile("/new-folder/file.txt");
-        File file = provider.get("/new-folder/file.txt").asFile();
-        assertTrue(file.exists());
-        ufs.assertUnderlyingFileEquals("/new-folder/file.txt", file);
-        assertEquals(List.of("file.txt"), provider.get("/new-folder").asFolder().list().stream().map(Entry::getName).toList());
+        doAssert(() -> {
+            File file = provider.get("/new-folder/file.txt").asFile();
+            assertTrue(file.exists());
+            ufs.assertUnderlyingFileEquals("/new-folder/file.txt", file);
+            assertEquals(List.of("file.txt"), provider.get("/new-folder").asFolder().list().stream().map(Entry::getName).toList());
 
-        // Test non existing entry
-        assertFalse(provider.get("/nonExisting").exists());
+            // Test non existing entry
+            assertFalse(provider.get("/nonExisting").exists());
+        });
 
         // Test file deletion is reflected in entries returned by the provider
         ufs.deleteFile("/new-folder/file.txt");
-        assertFalse(provider.get("/new-folder/file.txt").exists());
-        assertEquals(List.of(), provider.get("/new-folder").asFolder().list().stream().map(Entry::getName).toList());
+        doAssert(() -> {
+            assertFalse(provider.get("/new-folder/file.txt").exists());
+            assertEquals(List.of(), provider.get("/new-folder").asFolder().list().stream().map(Entry::getName).toList());
+        });
 
         // Test folder deletion is reflected in entries returned by the provider
         ufs.deleteFolder("/new-folder");
-        assertFalse(provider.get("/new-folder").exists());
-        assertFalse(provider.get(FileProvider.ROOT_PATH).asFolder().list().stream().map(Entry::getName).toList().contains("new-folder"));
+        doAssert(() -> {
+            assertFalse(provider.get("/new-folder").exists());
+            assertFalse(provider.get(FileProvider.ROOT_PATH).asFolder().list().stream().map(Entry::getName).toList().contains("new-folder"));
+        });
     }
 
     /**
@@ -525,13 +534,18 @@ public abstract class AbstractFileProviderTest {
 
         File mockFile = createMockFile("content");
         Folder folder = root.mkdir("folder");
-        assertTrue(ufs.underlyingFolderExists("/folder"));
-
-        folder.copy("file.txt", mockFile, null);
-        ufs.assertUnderlyingFileEquals("/folder/file.txt", mockFile);
         
-        folder.delete();
-        assertFalse(ufs.underlyingFolderExists("/folder"));
+        doAssert(() -> {
+            assertTrue(ufs.underlyingFolderExists("/folder"));
+            folder.copy("file.txt", mockFile, null);
+        });
+
+        doAssert(() -> {
+            ufs.assertUnderlyingFileEquals("/folder/file.txt", mockFile);
+            folder.delete();
+        });
+        
+        doAssert(() -> assertFalse(ufs.underlyingFolderExists("/folder")));
     }
     
     /**
