@@ -2,6 +2,7 @@ package com.fathzer.sync4j.eventually;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -138,6 +139,41 @@ class EventuallyConsistentFileProviderTest {
         // Now folder2 should be visible
         assertTrue(folder2.exists(), "Subfolder should exist after consistency delay");
         assertEquals(1, folder1.list().size(), "Parent folder should list the subfolder after consistency delay");
+    }
+
+    @Test
+    void testStrictModeForbidsWritingInNotVisibleFolder() throws IOException {
+        Folder root = provider.get(MemoryFileProvider.ROOT_PATH).asFolder();
+        Folder folder = root.mkdir("folder");
+        assertThrows(FileNotFoundException.class, () -> folder.mkdir("child"));
+        assertThrows(FileNotFoundException.class, () -> folder.copy("file.txt", AbstractFileProviderTest.createMockFile("Hello"), null));
+    }
+
+    @Test
+    void testMkdirIsIdempotentAndCreatorCanWrite() throws IOException, InterruptedException {
+        provider.close();
+        provider = new EventuallyConsistentProvider(new MemoryFileProvider(), CONSISTENCY_DELAY_MS, true);
+        Folder root = provider.get(MemoryFileProvider.ROOT_PATH).asFolder();
+        Folder folder = root.mkdir("folder");
+
+        // The creator can write in a folder returned by mkdir, even if it is not visible yet
+        assertFalse(folder.exists());
+        assertDoesNotThrow(() -> folder.mkdir("child"));
+        assertDoesNotThrow(() -> folder.copy("file.txt", AbstractFileProviderTest.createMockFile("Hello"), null));
+
+        waitForConsistency();
+        assertTrue(folder.exists());
+
+        // A second mkdir on a visible folder does not make it invisible again
+        Folder again = root.mkdir("folder");
+        assertTrue(again.exists(), "An existing folder should stay visible after an idempotent mkdir");
+    }
+
+    @Test
+    void testIsNotStronglyConsistent() {
+        // Even if the underlying provider is strongly consistent
+        assertTrue(new MemoryFileProvider().isStronglyConsistent());
+        assertFalse(provider.isStronglyConsistent());
     }
 
     @Test

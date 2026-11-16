@@ -28,6 +28,13 @@ import jakarta.annotation.Nonnull;
  * the system becomes consistent.
  * </p>
  * <p>
+ * By default (strict mode), a folder that is not yet visible can't be used at all, even through the handle returned by {@link Folder#mkdir(String)}.
+ * This models a distributed backend where a following request may be served by a node that does not know the new folder yet.
+ * <br>In session consistent mode (see {@link #EventuallyConsistentProvider(FileProvider, long, boolean)}), the handle returned by
+ * {@link Folder#mkdir(String)} accepts {@link Folder#mkdir(String)} and {@link Folder#copy(String, File, LongConsumer)} immediately
+ * (the creator can write in what it created). Reads ({@code list}, {@code exists}, ...) remain eventually consistent in both modes.
+ * </p>
+ * <p>
  * This provider wraps all entries returned by the underlying FileProvider to intercept operations and simulate the eventual consistency behavior.
  * </p>
  * <p>
@@ -41,6 +48,7 @@ public class EventuallyConsistentProvider implements FileProvider {
     private static final Timer TIMER = new Timer("EventuallyConsistentProvider", true);
     
     private final long consistencyDelayMs;
+    private final boolean sessionConsistent;
     private final FileProvider provider;
     final Map<String, Long> creationTimes = new ConcurrentHashMap<>();
     
@@ -50,8 +58,20 @@ public class EventuallyConsistentProvider implements FileProvider {
      * @param consistencyDelayMs the delay in milliseconds before a newly created entry becomes visible
      */
     public EventuallyConsistentProvider(FileProvider provider, long consistencyDelayMs) {
+        this(provider, consistencyDelayMs, false);
+    }
+
+    /**
+     * Creates a new eventually consistent file provider with the specified delay.
+     * @param provider the underlying file provider
+     * @param consistencyDelayMs the delay in milliseconds before a newly created entry becomes visible
+     * @param sessionConsistent true to allow writes (mkdir, copy) in a folder through the handle returned by mkdir, even if it is not yet visible.
+     * <br>If false (the default), any operation on a not yet visible folder fails.
+     */
+    public EventuallyConsistentProvider(FileProvider provider, long consistencyDelayMs, boolean sessionConsistent) {
         this.provider = provider;
         this.consistencyDelayMs = consistencyDelayMs;
+        this.sessionConsistent = sessionConsistent;
     }
     
     @Override
@@ -107,7 +127,7 @@ public class EventuallyConsistentProvider implements FileProvider {
         if (entry.isFile()) {
             return new EventuallyConsistentFile((File) entry);
         } else if (entry.isFolder()) {
-            return new EventuallyConsistentFolder((Folder) entry);
+            return new EventuallyConsistentFolder((Folder) entry, false);
         } else {
             return new MissingEntry(entry);
         }
@@ -134,12 +154,43 @@ public class EventuallyConsistentProvider implements FileProvider {
         
         return true;
     }
-    
-    private class MissingEntry implements Entry {
-        private final Entry delegate;
+
+    private abstract class LateConsistentEntry<T extends Entry> {
+        private final T delegate;
         
-        MissingEntry(Entry delegate) {
+        LateConsistentEntry(T delegate) {
             this.delegate = delegate;
+        }
+
+        public T getDelegate() {
+            return delegate;
+        }
+
+        public String getName() {
+            return delegate.getName();
+        }
+
+        public String getPath() throws IOException {
+            return getDelegate().getPath();
+        }
+
+        public Entry getParent() throws IOException {
+            Entry parent = getDelegate().getParent();
+            if (parent == null) {
+                return null;
+            }
+            return wrapEntry(parent);
+        }
+        
+        @Nonnull
+        public FileProvider getFileProvider() {
+            return EventuallyConsistentProvider.this;
+        }
+    }
+    
+    private class MissingEntry extends LateConsistentEntry<Entry> implements Entry {
+        MissingEntry(Entry delegate) {
+            super(delegate);
         }
         
         @Override
@@ -151,31 +202,11 @@ public class EventuallyConsistentProvider implements FileProvider {
         public boolean isFolder() {
             return false;
         }
-        
-        @Override
-        public String getPath() throws IOException {
-            return delegate.getPath();
-        }
-
-        @Override
-        public String getName() {
-            return delegate.getName();
-        }
-
-        @Override
-        public Entry getParent() throws IOException {
-            return delegate.getParent();
-        }
 
         @Override
         public void delete() throws IOException {
             checkReadOnly();
-            TIMER.schedule(toTask(delegate::delete), consistencyDelayMs);
-        }
-
-        @Override
-        public FileProvider getFileProvider() {
-            return EventuallyConsistentProvider.this;
+            TIMER.schedule(toTask(getDelegate()::delete), consistencyDelayMs);
         }
     }
 
@@ -195,18 +226,17 @@ public class EventuallyConsistentProvider implements FileProvider {
     /**
      * Wrapper for File that simulates eventual consistency.
      */
-    private class EventuallyConsistentFile implements File {
-        private final File delegate;
+    private class EventuallyConsistentFile extends LateConsistentEntry<File> implements File {
         private final String path;
         
         EventuallyConsistentFile(File delegate) throws IOException {
-            this.delegate = delegate;
+            super(delegate);
             this.path = delegate.getPath();
         }
         
         @Override
         public boolean isFile() {
-            return !isInconsistent(path) && delegate.isFile();
+            return !isInconsistent(path) && getDelegate().isFile();
         }
         
         @Override
@@ -216,66 +246,45 @@ public class EventuallyConsistentProvider implements FileProvider {
         
         @Override
         public boolean exists() {
-            return !isInconsistent(path) && delegate.exists();
-        }
-        
-        @Override
-        @Nonnull
-        public String getName() {
-            return delegate.getName();
-        }
-        
-        @Override
-        public Entry getParent() throws IOException {
-            Entry parent = delegate.getParent();
-            if (parent == null) {
-                return null;
-            }
-            return wrapEntry(parent);
+            return !isInconsistent(path) && getDelegate().exists();
         }
         
         @Override
         public void delete() throws IOException {
             checkReadOnly();
-            TIMER.schedule(toTask(delegate::delete), consistencyDelayMs);
-        }
-        
-        @Override
-        @Nonnull
-        public FileProvider getFileProvider() {
-            return EventuallyConsistentProvider.this;
+            TIMER.schedule(toTask(getDelegate()::delete), consistencyDelayMs);
         }
         
         @Override
         public long getSize() throws IOException {
             checkConsistency();
-            return delegate.getSize();
+            return getDelegate().getSize();
         }
         
         @Override
         public long getCreationTime() throws IOException {
             checkConsistency();
-            return delegate.getCreationTime();
+            return getDelegate().getCreationTime();
         }
         
         @Override
         public long getLastModifiedTime() throws IOException {
             checkConsistency();
-            return delegate.getLastModifiedTime();
+            return getDelegate().getLastModifiedTime();
         }
         
         @Override
         @Nonnull
         public String getHash(@Nonnull HashAlgorithm hashAlgorithm) throws IOException {
             checkConsistency();
-            return delegate.getHash(hashAlgorithm);
+            return getDelegate().getHash(hashAlgorithm);
         }
         
         @Override
         @Nonnull
         public InputStream getInputStream() throws IOException {
             checkConsistency();
-            return delegate.getInputStream();
+            return getDelegate().getInputStream();
         }
 
         private void checkConsistency() throws FileNotFoundException {
@@ -288,13 +297,15 @@ public class EventuallyConsistentProvider implements FileProvider {
     /**
      * Wrapper for Folder that simulates eventual consistency.
      */
-    private class EventuallyConsistentFolder implements Folder {
-        private final Folder delegate;
+    private class EventuallyConsistentFolder extends LateConsistentEntry<Folder> implements Folder {
         private final String path;
+        /** True if this folder was returned by {@link Folder#mkdir(String)} in session consistent mode: its creator can write in it even if it is not yet visible. */
+        private final boolean created;
         
-        EventuallyConsistentFolder(Folder delegate) throws IOException {
-            this.delegate = delegate;
+        EventuallyConsistentFolder(Folder delegate, boolean created) throws IOException {
+            super(delegate);
             this.path = delegate.getPath();
+            this.created = created;
         }
         
         @Override
@@ -304,48 +315,27 @@ public class EventuallyConsistentProvider implements FileProvider {
         
         @Override
         public boolean isFolder() {
-            return !isInconsistent(path) && delegate.isFolder();
+            return !isInconsistent(path) && getDelegate().isFolder();
         }
         
         @Override
         public boolean exists() {
-            return !isInconsistent(path) && delegate.exists();
-        }
-        
-        @Override
-        @Nonnull
-        public String getName() {
-            return delegate.getName();
-        }
-        
-        @Override
-        public Entry getParent() throws IOException {
-            Entry parent = delegate.getParent();
-            if (parent == null) {
-                return null;
-            }
-            return wrapEntry(parent);
+            return !isInconsistent(path) && getDelegate().exists();
         }
 
         private void checkConsistency() throws IOException {
             if (isInconsistent(path)) {
-                throw new IOException("Folder does not exist: " + path);
+                throw new FileNotFoundException("Folder does not exist: " + path);
             }
         }
         
         @Override
         public void delete() throws IOException {
             checkReadOnly();
-            if (delegate.getPath().equals(FileProvider.ROOT_PATH)) {
+            if (getDelegate().getPath().equals(FileProvider.ROOT_PATH)) {
                 throw new IOException("Cannot delete root folder");
             }
-            TIMER.schedule(toTask(delegate::delete), consistencyDelayMs);
-        }
-        
-        @Override
-        @Nonnull
-        public FileProvider getFileProvider() {
-            return EventuallyConsistentProvider.this;
+            TIMER.schedule(toTask(getDelegate()::delete), consistencyDelayMs);
         }
         
         @Override
@@ -353,7 +343,7 @@ public class EventuallyConsistentProvider implements FileProvider {
         public List<Entry> list() throws IOException {
             checkConsistency();
             
-            List<Entry> entries = delegate.list();
+            List<Entry> entries = getDelegate().list();
             // Filter out entries that are still inconsistent and wrap the visible ones
             return entries.stream()
                     .filter(entry -> {
@@ -377,8 +367,10 @@ public class EventuallyConsistentProvider implements FileProvider {
         @Override
         @Nonnull
         public File copy(@Nonnull String fileName, @Nonnull File content, LongConsumer progressListener) throws IOException {
-            checkConsistency();
-            File file = delegate.copy(fileName, content, progressListener);
+            if (!created) {
+                checkConsistency();
+            }
+            File file = getDelegate().copy(fileName, content, progressListener);
             recordCreation(file.getPath());
             return new EventuallyConsistentFile(file);
         }
@@ -386,10 +378,16 @@ public class EventuallyConsistentProvider implements FileProvider {
         @Override
         @Nonnull
         public Folder mkdir(@Nonnull String folderName) throws IOException {
-            checkConsistency();
-            Folder folder = delegate.mkdir(folderName);
-            recordCreation(folder.getPath());
-            return new EventuallyConsistentFolder(folder);
+            if (!created) {
+                checkConsistency();
+            }
+            final boolean alreadyExists = provider.get(getDelegate().getPath() + "/" + folderName).isFolder();
+            Folder folder = getDelegate().mkdir(folderName);
+            if (!alreadyExists) {
+                // mkdir is idempotent: only a real creation is subject to the consistency delay
+                recordCreation(folder.getPath());
+            }
+            return new EventuallyConsistentFolder(folder, sessionConsistent);
         }
             
         /**

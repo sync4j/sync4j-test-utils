@@ -12,6 +12,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
@@ -341,12 +342,15 @@ public abstract class AbstractFileProviderTest {
             assertTrue(retrieved.exists());
             assertTrue(retrieved.isFolder());
 
-            assertThrows(IOException.class, () -> parent.mkdir("child"), "Should throw IOException when folder already exists");
+            // mkdir is idempotent when the folder already exists
+            Folder again = parent.mkdir("child");
+            assertEquals("child", again.getName());
+            assertTrue(again.isFolder());
         });
 
         // Check what happens if there is a file with the same name
         parent.copy("child.txt", createMockFile("content"), null);
-        doAssert(() -> assertThrows(IOException.class, () -> parent.mkdir("child.txt"), "Should throw IOException when a file with the same name exists"));
+        doAssert(() -> assertThrows(FileAlreadyExistsException.class, () -> parent.mkdir("child.txt"), "Should throw FileAlreadyExistsException when a file with the same name exists"));
         
         // Check illegal file names
         assertThrows(IllegalArgumentException.class, () -> parent.mkdir(""), "Should throw for empty name");
