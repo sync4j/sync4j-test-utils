@@ -243,6 +243,10 @@ public abstract class AbstractFileProviderTest {
     protected void testGet() throws IOException {
         assertThrows(IllegalArgumentException.class, () -> provider.get("/folder//file.txt"), "Invalid path (double slash) should not be retrieved");
         assertThrows(IllegalArgumentException.class, () -> provider.get("folder/file.txt"), "Invalid path (no leading slash) should not be retrieved");
+        // A path designates an entry under the root: it can't go out of it
+        assertThrows(IllegalArgumentException.class, () -> provider.get("/.."), "Invalid path (..) should not be retrieved");
+        assertThrows(IllegalArgumentException.class, () -> provider.get("/folder/../../file.txt"), "Invalid path (..) should not be retrieved");
+        assertThrows(IllegalArgumentException.class, () -> provider.get("/./file.txt"), "Invalid path (.) should not be retrieved");
         Entry file = getAFile();
         Entry nonExistingParentFile = getMissingEntry("/folder");
         doAssert(() -> {
@@ -355,6 +359,8 @@ public abstract class AbstractFileProviderTest {
         // Check illegal file names
         assertThrows(IllegalArgumentException.class, () -> parent.mkdir(""), "Should throw for empty name");
         assertThrows(IllegalArgumentException.class, () -> parent.mkdir("name/with/slash"), "Should throw for name with slash");
+        assertThrows(IllegalArgumentException.class, () -> parent.mkdir(".."), "Should throw for ..");
+        assertThrows(IllegalArgumentException.class, () -> parent.mkdir("."), "Should throw for .");
     }
     
     /**
@@ -399,6 +405,8 @@ public abstract class AbstractFileProviderTest {
         // Check illegal file names
         assertThrows(IllegalArgumentException.class, () -> dest.copy("", sourceFile, null), "Should throw for empty name");
         assertThrows(IllegalArgumentException.class, () -> dest.copy("name/with/slash", sourceFile, null), "Should throw for name with slash");
+        assertThrows(IllegalArgumentException.class, () -> dest.copy("..", sourceFile, null), "Should throw for ..");
+        assertThrows(IllegalArgumentException.class, () -> dest.copy(".", sourceFile, null), "Should throw for .");
     }
     
     /**

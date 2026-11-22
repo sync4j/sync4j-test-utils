@@ -13,7 +13,7 @@ Import with Maven:
 <dependency>
     <groupId>com.fathzer</groupId>
     <artifactId>sync4j-test-utils</artifactId>
-    <version>0.0.2</version>
+    <version>0.0.3</version>
     <scope>test</scope>
 </dependency>
 ```
